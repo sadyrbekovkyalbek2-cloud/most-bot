@@ -1,6 +1,4 @@
 python-telegram-bot==20.7
 httpx==0.26.0
 SpeechRecognition==3.10.1
-pytesseract==0.3.10
-Pillow==9.5.0
 pydub==0.25.1
