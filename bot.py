@@ -134,12 +134,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "рџЊ‰ РџСЂРёРІРµС‚! РЇ РїРµСЂРµРІРѕРґС‡РёРє дё­ж–‡ в†” Р СѓСЃСЃРєРёР№.\n\n"
-        "РџСЂРёС€Р»Рё РјРЅРµ:\n"
-        "вЂў рџ’¬ РўРµРєСЃС‚ вЂ” РїРµСЂРµРІРµРґСѓ\n"
-        "вЂў рџЋ¤ Р“РѕР»РѕСЃРѕРІРѕРµ вЂ” СЂР°СЃРїРѕР·РЅР°СЋ Рё РїРµСЂРµРІРµРґСѓ\n"
-        "вЂў рџ“· Р¤РѕС‚Рѕ СЃ С‚РµРєСЃС‚РѕРј вЂ” РїСЂРѕС‡РёС‚Р°СЋ Рё РїРµСЂРµРІРµРґСѓ\n\n"
-        "РЇР·С‹Рє РѕРїСЂРµРґРµР»СЏСЋ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё!"
+        "Bridge Translator: ZH <-> RU\n\n"
+        "Send me:\n"
+        "- Text: I will translate\n"
+        "- Voice: I will recognize and translate\n"
+        "- Photo with text: I will read and translate\n\n"
+        "Language is detected automatically!"
     )
 
 def main():
