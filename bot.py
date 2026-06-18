@@ -96,7 +96,47 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"{flag} {translated}")
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Voice: coming soon. Send text.")
+    await update.message.chat.send_action('typing')
+    voice = update.message.voice or update.message.audio
+    if not voice:
+        return
+
+    file = await context.bot.get_file(voice.file_id)
+    ogg_path = f"/tmp/{voice.file_id}.ogg"
+    wav_path = f"/tmp/{voice.file_id}.wav"
+    await file.download_to_drive(ogg_path)
+
+    try:
+        audio = AudioSegment.from_ogg(ogg_path)
+        audio.export(wav_path, format="wav")
+
+        recognizer = sr.Recognizer()
+        with sr.AudioFile(wav_path) as source:
+            audio_data = recognizer.record(source)
+
+        text = None
+        for lang_code in ["ru-RU", "zh-CN"]:
+            try:
+                text = recognizer.recognize_google(audio_data, language=lang_code)
+                break
+            except sr.UnknownValueError:
+                continue
+
+        if not text:
+            await update.message.reply_text("Не удалось распознать речь.")
+            return
+
+        source_lang = detect_language(text)
+        translated = translate_sync(text, source_lang)
+        flag = "RU:" if source_lang == 'zh' else "ZH:"
+        await update.message.reply_text(f"🎤 {text}\n{flag} {translated}")
+    except Exception as e:
+        logger.error(f"Voice processing error: {e}")
+        await update.message.reply_text("Ошибка обработки голосового сообщения.")
+    finally:
+        for p in (ogg_path, wav_path):
+            if os.path.exists(p):
+                os.remove(p)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Photo OCR: coming soon. Send text.")
