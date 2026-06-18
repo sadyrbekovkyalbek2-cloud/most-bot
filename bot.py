@@ -38,19 +38,31 @@ def translate_sync(text, source_lang):
     src = 'zh-CN' if source_lang == 'zh' else 'ru'
     q = urllib.parse.quote(text)
 
-    # Попытка 1-2: Google Translate с повторными попытками
-    url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={src}&tl={target}&dt=t&q={q}"
-    for attempt in range(2):
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read())
-                if data and data[0]:
-                    result = "".join(chunk[0] for chunk in data[0] if chunk[0])
-                    return result.strip()
-        except Exception as e:
-            logger.warning(f"Google Translate attempt {attempt+1} failed: {e}")
-            time.sleep(1.5)
+    # Основной способ: MyMemory с email (повышенный лимит, без блокировок)
+    try:
+        mm_url = f"https://api.mymemory.translated.net/get?q={q}&langpair={src}|{target}&de=your.email@gmail.com"
+        req = urllib.request.Request(mm_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+            result = data["responseData"]["translatedText"]
+            if result and "MYMEMORY WARNING" not in result:
+                return result.strip()
+    except Exception as e:
+        logger.warning(f"MyMemory failed: {e}")
+
+    # Запасной способ: Google Translate
+    try:
+        g_url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={src}&tl={target}&dt=t&q={q}"
+        req = urllib.request.Request(g_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+            if data and data[0]:
+                result = "".join(chunk[0] for chunk in data[0] if chunk[0])
+                return result.strip()
+    except Exception as e:
+        logger.error(f"Google Translate also failed: {e}")
+
+    return "Translation error"
 
     # Запасной вариант: MyMemory API
     try:
