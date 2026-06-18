@@ -116,6 +116,10 @@ async def main():
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)
     await asyncio.Event().wait()
+    
+    SpeechRecognition
+pydub
+audioop-lts
 
 if __name__ == "__main__":
     asyncio.run(main())
