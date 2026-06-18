@@ -1,3 +1,5 @@
+import speech_recognition as sr
+from pydub import AudioSegment
 import os
 import asyncio
 import time
