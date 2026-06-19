@@ -1,8 +1,5 @@
-import speech_recognition as sr
-from pydub import AudioSegment
 import os
 import asyncio
-import time
 import logging
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -17,7 +14,7 @@ PORT = int(os.environ.get("PORT", 10000))
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-logging.getLogger("httpx").setLevel(logging.WARNING)   # ← добавить сюда
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -40,9 +37,8 @@ def translate_sync(text, source_lang):
     src = 'zh-CN' if source_lang == 'zh' else 'ru'
     q = urllib.parse.quote(text)
 
-    # Основной способ: MyMemory с email (повышенный лимит, без блокировок)
     try:
-        mm_url = f"https://api.mymemory.translated.net/get?q={q}&langpair={src}|{target}&de=your.email@gmail.com"
+        mm_url = f"https://api.mymemory.translated.net/get?q={q}&langpair={src}|{target}"
         req = urllib.request.Request(mm_url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read())
@@ -52,7 +48,6 @@ def translate_sync(text, source_lang):
     except Exception as e:
         logger.warning(f"MyMemory failed: {e}")
 
-    # Запасной способ: Google Translate
     try:
         g_url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={src}&tl={target}&dt=t&q={q}"
         req = urllib.request.Request(g_url, headers={"User-Agent": "Mozilla/5.0"})
@@ -65,19 +60,6 @@ def translate_sync(text, source_lang):
         logger.error(f"Google Translate also failed: {e}")
 
     return "Translation error"
-
-    # Запасной вариант: MyMemory API
-    try:
-        target_short = 'ru' if source_lang == 'zh' else 'zh-CN'
-        src_short = 'zh-CN' if source_lang == 'zh' else 'ru'
-        backup_url = f"https://api.mymemory.translated.net/get?q={q}&langpair={src_short}|{target_short}"
-        req = urllib.request.Request(backup_url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read())
-            return data["responseData"]["translatedText"].strip()
-    except Exception as e:
-        logger.error(f"Backup translation also failed: {e}")
-        return "Translation error"
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -96,53 +78,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"{flag} {translated}")
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.chat.send_action('typing')
-    voice = update.message.voice or update.message.audio
-    if not voice:
-        return
-
-    file = await context.bot.get_file(voice.file_id)
-    ogg_path = f"/tmp/{voice.file_id}.ogg"
-    wav_path = f"/tmp/{voice.file_id}.wav"
-    await file.download_to_drive(ogg_path)
-
-    try:
-        audio = AudioSegment.from_ogg(ogg_path)
-        audio.export(wav_path, format="wav")
-
-        recognizer = sr.Recognizer()
-        with sr.AudioFile(wav_path) as source:
-            audio_data = recognizer.record(source)
-
-        text = None
-        for lang_code in ["ru-RU", "zh-CN"]:
-            try:
-                text = recognizer.recognize_google(audio_data, language=lang_code)
-                break
-            except sr.UnknownValueError:
-                continue
-
-        if not text:
-            await update.message.reply_text("Не удалось распознать речь.")
-            return
-
-        source_lang = detect_language(text)
-        translated = translate_sync(text, source_lang)
-        flag = "RU:" if source_lang == 'zh' else "ZH:"
-        await update.message.reply_text(f"🎤 {text}\n{flag} {translated}")
-    except Exception as e:
-        logger.error(f"Voice processing error: {e}")
-        await update.message.reply_text("Ошибка обработки голосового сообщения.")
-    finally:
-        for p in (ogg_path, wav_path):
-            if os.path.exists(p):
-                os.remove(p)
+    await update.message.reply_text("Voice recognition: coming soon. Please send text for now.")
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Photo OCR: coming soon. Send text.")
+    await update.message.reply_text("Photo OCR: coming soon. Please send text for now.")
 
 async def main():
-    # Start health server in background thread
     t = threading.Thread(target=run_health_server, daemon=True)
     t.start()
     logger.info(f"Health server on port {PORT}")
@@ -158,11 +99,6 @@ async def main():
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)
     await asyncio.Event().wait()
-    
-    SpeechRecognition
-pydub
-audioop-lts
 
 if __name__ == "__main__":
     asyncio.run(main())
-
