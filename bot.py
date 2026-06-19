@@ -2,6 +2,7 @@ import os
 import asyncio
 import logging
 import threading
+import subprocess
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
@@ -61,10 +62,35 @@ def translate_sync(text, source_lang):
 
     return "Translation error"
 
+def recognize_speech_sync(ogg_path, wav_path):
+    """Convert ogg->wav using ffmpeg, then recognize with SpeechRecognition."""
+    import speech_recognition as sr
+
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", ogg_path, "-ar", "16000", "-ac", "1", wav_path],
+        capture_output=True, timeout=30
+    )
+
+    recognizer = sr.Recognizer()
+    with sr.AudioFile(wav_path) as source:
+        audio_data = recognizer.record(source)
+
+    for lang_code in ["ru-RU", "zh-CN"]:
+        try:
+            text = recognizer.recognize_google(audio_data, language=lang_code)
+            if text:
+                return text
+        except sr.UnknownValueError:
+            continue
+        except Exception as e:
+            logger.warning(f"Recognition error ({lang_code}): {e}")
+            continue
+    return None
+
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Bridge Translator ZH <-> RU\n\n"
-        "Send text in Russian or Chinese - I translate automatically!"
+        "Send text, voice, or photo with text - I translate automatically!"
     )
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -78,10 +104,38 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"{flag} {translated}")
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Voice recognition: coming soon. Please send text for now.")
+    await update.message.chat.send_action('typing')
+    voice = update.message.voice or update.message.audio
+    if not voice:
+        return
+
+    file = await context.bot.get_file(voice.file_id)
+    ogg_path = f"/tmp/{voice.file_id}.ogg"
+    wav_path = f"/tmp/{voice.file_id}.wav"
+    await file.download_to_drive(ogg_path)
+
+    try:
+        loop = asyncio.get_event_loop()
+        text = await loop.run_in_executor(None, recognize_speech_sync, ogg_path, wav_path)
+
+        if not text:
+            await update.message.reply_text("Could not recognize speech. Please try again, speaking clearly.")
+            return
+
+        source_lang = detect_language(text)
+        translated = translate_sync(text, source_lang)
+        flag = "RU:" if source_lang == 'zh' else "ZH:"
+        await update.message.reply_text(f"рџЋ¤ {text}\n{flag} {translated}")
+    except Exception as e:
+        logger.error(f"Voice processing error: {e}")
+        await update.message.reply_text("Error processing voice message.")
+    finally:
+        for p in (ogg_path, wav_path):
+            if os.path.exists(p):
+                os.remove(p)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Photo OCR: coming soon. Please send text for now.")
+    await update.message.reply_text("Photo OCR: coming soon. Please send text or voice for now.")
 
 async def main():
     t = threading.Thread(target=run_health_server, daemon=True)
