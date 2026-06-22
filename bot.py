@@ -37,7 +37,6 @@ def translate_sync(text, source_lang):
     target = 'ru' if source_lang == 'zh' else 'zh-CN'
     src = 'zh-CN' if source_lang == 'zh' else 'ru'
     q = urllib.parse.quote(text)
-
     try:
         mm_url = f"https://api.mymemory.translated.net/get?q={q}&langpair={src}|{target}"
         req = urllib.request.Request(mm_url, headers={"User-Agent": "Mozilla/5.0"})
@@ -48,7 +47,6 @@ def translate_sync(text, source_lang):
                 return result.strip()
     except Exception as e:
         logger.warning(f"MyMemory failed: {e}")
-
     try:
         g_url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={src}&tl={target}&dt=t&q={q}"
         req = urllib.request.Request(g_url, headers={"User-Agent": "Mozilla/5.0"})
@@ -58,23 +56,37 @@ def translate_sync(text, source_lang):
                 result = "".join(chunk[0] for chunk in data[0] if chunk[0])
                 return result.strip()
     except Exception as e:
-        logger.error(f"Google Translate also failed: {e}")
-
+        logger.error(f"Google Translate failed: {e}")
     return "Translation error"
 
-def recognize_speech_sync(ogg_path, wav_path):
-    """Convert ogg->wav using ffmpeg, then recognize with SpeechRecognition."""
-    import speech_recognition as sr
+def tts_sync(text, lang, out_path):
+    """Text-to-speech using Google TTS (gtts)"""
+    try:
+        from gtts import gTTS
+        tts_lang = 'zh' if lang == 'zh' else 'ru'
+        tts = gTTS(text=text, lang=tts_lang)
+        mp3_path = out_path + '.mp3'
+        tts.save(mp3_path)
+        # Convert mp3 to ogg opus for Telegram
+        subprocess.run(
+            ['ffmpeg', '-y', '-i', mp3_path, '-c:a', 'libopus', out_path],
+            capture_output=True, timeout=30
+        )
+        os.remove(mp3_path)
+        return os.path.exists(out_path)
+    except Exception as e:
+        logger.error(f"TTS error: {e}")
+        return False
 
+def recognize_speech_sync(ogg_path, wav_path):
+    import speech_recognition as sr
     subprocess.run(
         ["ffmpeg", "-y", "-i", ogg_path, "-ar", "16000", "-ac", "1", wav_path],
         capture_output=True, timeout=30
     )
-
     recognizer = sr.Recognizer()
     with sr.AudioFile(wav_path) as source:
         audio_data = recognizer.record(source)
-
     for lang_code in ["ru-RU", "zh-CN"]:
         try:
             text = recognizer.recognize_google(audio_data, language=lang_code)
@@ -84,13 +96,12 @@ def recognize_speech_sync(ogg_path, wav_path):
             continue
         except Exception as e:
             logger.warning(f"Recognition error ({lang_code}): {e}")
-            continue
     return None
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Bridge Translator ZH <-> RU\n\n"
-        "Send text, voice, or photo with text - I translate automatically!"
+        "Send text, voice, or photo - I translate and reply with voice!"
     )
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -100,6 +111,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.chat.send_action('typing')
     source_lang = detect_language(text)
     translated = translate_sync(text, source_lang)
+    target_lang = 'ru' if source_lang == 'zh' else 'zh'
+    # Send text translation
     flag = "RU:" if source_lang == 'zh' else "ZH:"
     await update.message.reply_text(f"{flag} {translated}")
 
@@ -112,6 +125,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file = await context.bot.get_file(voice.file_id)
     ogg_path = f"/tmp/{voice.file_id}.ogg"
     wav_path = f"/tmp/{voice.file_id}.wav"
+    out_ogg = f"/tmp/{voice.file_id}_out.ogg"
     await file.download_to_drive(ogg_path)
 
     try:
@@ -119,23 +133,34 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = await loop.run_in_executor(None, recognize_speech_sync, ogg_path, wav_path)
 
         if not text:
-            await update.message.reply_text("Could not recognize speech. Please try again, speaking clearly.")
+            await update.message.reply_text("Could not recognize speech. Please try again.")
             return
 
         source_lang = detect_language(text)
         translated = translate_sync(text, source_lang)
+        target_lang = 'ru' if source_lang == 'zh' else 'zh'
         flag = "RU:" if source_lang == 'zh' else "ZH:"
+
+        # Send text
         await update.message.reply_text(f"рџЋ¤ {text}\n{flag} {translated}")
+
+        # Send voice reply
+        await update.message.chat.send_action('record_voice')
+        success = await loop.run_in_executor(None, tts_sync, translated, target_lang, out_ogg)
+        if success:
+            with open(out_ogg, 'rb') as audio_file:
+                await update.message.reply_voice(voice=audio_file)
+
     except Exception as e:
         logger.error(f"Voice processing error: {e}")
         await update.message.reply_text("Error processing voice message.")
     finally:
-        for p in (ogg_path, wav_path):
+        for p in [ogg_path, wav_path, out_ogg]:
             if os.path.exists(p):
                 os.remove(p)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Photo OCR: coming soon. Please send text or voice for now.")
+    await update.message.reply_text("Photo OCR: coming soon.")
 
 async def main():
     t = threading.Thread(target=run_health_server, daemon=True)
