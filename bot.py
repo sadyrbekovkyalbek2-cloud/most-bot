@@ -11,6 +11,7 @@ import json
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 PORT = int(os.environ.get("PORT", 10000))
+SERVICE_URL = os.environ.get("SERVICE_URL", "https://most-bot-9cc7.onrender.com")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -27,6 +28,17 @@ class HealthHandler(BaseHTTPRequestHandler):
 def run_health_server():
     server = HTTPServer(("0.0.0.0", PORT), HealthHandler)
     server.serve_forever()
+
+def self_ping():
+    """Ping self every 10 minutes to prevent sleeping"""
+    while True:
+        import time
+        time.sleep(600)
+        try:
+            urllib.request.urlopen(SERVICE_URL, timeout=10)
+            logger.info("Self-ping OK")
+        except Exception as e:
+            logger.warning(f"Self-ping failed: {e}")
 
 def detect_language(text):
     chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
@@ -131,10 +143,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target_lang = 'ru' if source_lang == 'zh' else 'zh'
         flag = "RU:" if source_lang == 'zh' else "ZH:"
 
-        # Send text
         await update.message.reply_text(f"рџЋ¤ {text}\n{flag} {translated}")
 
-        # Send voice as audio (mp3)
         await update.message.chat.send_action('upload_audio')
         success = await loop.run_in_executor(None, tts_sync, translated, target_lang, mp3_path)
         if success:
@@ -153,9 +163,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Photo OCR: coming soon.")
 
 async def main():
+    # Health server
     t = threading.Thread(target=run_health_server, daemon=True)
     t.start()
     logger.info(f"Health server on port {PORT}")
+
+    # Self-ping to prevent sleeping
+    p = threading.Thread(target=self_ping, daemon=True)
+    p.start()
+    logger.info("Self-ping started")
 
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^/start'), handle_start))
